@@ -6,7 +6,14 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  getHealth() {
+    return {
+      status: 'ok',
+      service: 'users-microservice',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV,
+      uptime: process.uptime(),
+      database: 'connected',
+    };
   }
 }

@@ -1,0 +1,42 @@
+# Frontend Dockerfile for Development
+FROM node:22.11.0-alpine
+
+# Add labels
+LABEL org.opencontainers.image.title="SRMS Frontend"
+LABEL org.opencontainers.image.description="Frontend development image for SRMS"
+LABEL org.opencontainers.image.version="dev"
+LABEL org.opencontainers.image.vendor="Ayamn Nagy"
+LABEL org.opencontainers.image.authors="AymanNagy.Ahmed@gmail.com"
+LABEL org.opencontainers.image.source="https://github.com/yourusername/yourrepo"
+
+# Create app directory and set permissions
+WORKDIR /app
+
+# Install latest npm
+RUN npm install -g npm@10.9.0
+
+# Create directories and set permissions
+RUN mkdir -p /app/.next /app/node_modules && \
+    chown -R node:node /app
+
+# Copy package files with correct ownership
+COPY --chown=node:node package*.json ./
+
+# Switch to node user and install dependencies
+USER node
+
+# Install dependencies as node user
+RUN npm ci
+
+# Copy the rest of the code with correct ownership
+COPY --chown=node:node . .
+
+# Expose development port
+EXPOSE 3000
+
+# Set environment to development
+ENV NODE_ENV=development
+ENV CHOKIDAR_USEPOLLING=true
+
+# Development command with hot reload
+CMD ["npm", "run", "start:dev"]

@@ -1,0 +1,207 @@
+version: '3.8'
+
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-healthcheck: &default-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 3
+
+networks:
+  srms_network:
+    driver: bridge
+    name: srms_network
+
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: ${PROJECT_NAME}_rabbitmq
+    # user: "rabbitmq"
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT}:5672"
+      - "${RABBITMQ_UI_PORT}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq:delegated
+    networks:
+      - ${PROJECT_NAME}_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      <<: *default-healthcheck
+    <<: *default-logging
+
+  pg_users_db:
+    image: postgres:17.2-alpine
+    container_name: ${PROJECT_NAME}_users_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:delegated
+    networks:
+      - ${PROJECT_NAME}_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      <<: *default-healthcheck
+    <<: *default-logging
+
+  pgadmin:
+    image: dpage/pgadmin4:8.13.0
+    container_name: ${PROJECT_NAME}_pgadmin4
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "${PGADMIN_PORT}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin:delegated
+    networks:
+      - ${PROJECT_NAME}_network
+    depends_on:
+      pg_users_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:80/misc/ping"]
+      <<: *default-healthcheck
+    <<: *default-logging
+
+
+  api_gateway:
+    image: ${API_GATEWAY_IMAGE_NAME}:${API_GATEWAY_IMAGE_TAG}
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile.srms.gateway.dev
+      args:
+        NODE_ENV: ${NODE_ENV}
+    container_name: ${PROJECT_NAME}_api_gateway
+    restart: unless-stopped
+    volumes:
+      - ./backend/api-gateway:/var/www/api-gateway:delegated
+      - api_gateway_node_modules:/var/www/api-gateway/node_modules
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${API_GATEWAY_PORT}
+      - FRONTEND_URL=http://frontend:${FRONTEND_PORT}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
+      - USERS_MS_URL=http://users_ms:${USERS_MS_PORT}
+    networks:
+      - ${PROJECT_NAME}_network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      users_ms:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${API_GATEWAY_PORT}/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    <<: *default-logging
+
+  users_ms:
+    image: ${USERS_MS_IMAGE_NAME}:${USERS_MS_IMAGE_TAG}
+    build:
+      context: ./backend/users-ms
+      dockerfile: Dockerfile.srms.users.dev
+      args:
+        NODE_ENV: ${NODE_ENV}
+    container_name: ${PROJECT_NAME}_users_ms
+    restart: unless-stopped
+    volumes:
+      - ./backend/users-ms:/var/www/users-ms:delegated
+      - users_ms_node_modules:/var/www/users-ms/node_modules
+    ports:
+      - "${USERS_MS_PORT}:${USERS_MS_PORT}"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${USERS_MS_PORT}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg_users_db:5432/${POSTGRES_DB}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
+    networks:
+      - ${PROJECT_NAME}_network
+    depends_on:
+      pg_users_db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${USERS_MS_PORT}/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    <<: *default-logging
+  
+  frontend:
+    image: ${FRONTEND_IMAGE_NAME}:${FRONTEND_IMAGE_TAG}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.srms.frontend.dev
+      args:
+        NODE_ENV: ${NODE_ENV}
+        BUILD_DATE: ${BUILD_DATE}
+        VERSION: ${FRONTEND_IMAGE_TAG}
+    container_name: ${PROJECT_NAME}_frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/app:delegated
+      - frontend_node_modules:/app/node_modules:delegated
+      - frontend_next:/app/.next:delegated
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - PORT=${FRONTEND_PORT}
+      - NEXT_PUBLIC_API_URL=http://api_gateway:${API_GATEWAY_PORT}/api
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - ${PROJECT_NAME}_network
+    depends_on:
+      api_gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${FRONTEND_PORT}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    <<: *default-logging
+
+volumes:
+  postgres_data:
+    name: ${PROJECT_NAME}_postgres_data
+  rabbitmq_data:
+    name: ${PROJECT_NAME}_rabbitmq_data
+  frontend_node_modules:
+    name: ${PROJECT_NAME}_frontend_node_modules
+  frontend:
+    name: ${PROJECT_NAME}_frontend
+  api_gateway_node_modules:
+    name: ${PROJECT_NAME}_api_gateway_node_modules
+  users_ms_node_modules:
+    name: ${PROJECT_NAME}_users_ms_node_modules
+  pgadmin_data:
+    name: ${PROJECT_NAME}_pgadmin4_data
+  frontend_next:
+    name: ${PROJECT_NAME}_frontend_next
+

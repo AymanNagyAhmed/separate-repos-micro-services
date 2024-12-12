@@ -1,33 +1,36 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createCorsConfig } from '@/config/cors.config';
+import { GlobalExceptionFilter } from '@/common/filters/global-exception.filter';
 
 async function bootstrap() {
-  try {
-    const logger = new Logger('Bootstrap');
-    const app = await NestFactory.create(AppModule, {
-      logger: ['error', 'warn', 'log', 'debug', 'verbose'],
-    });
-    
-    const port = process.env.PORT || 4000;
-    app.setGlobalPrefix('api');
-    
-    // More detailed CORS configuration
-    app.enableCors({
-      origin: process.env.NODE_ENV === 'development' ? '*' : process.env.FRONTEND_URLS.split(','),
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-      credentials: true,
-      preflightContinue: false,
-      optionsSuccessStatus: 204,
-    });
-
-    await app.listen(port, '0.0.0.0');
-    logger.log(`Application is running on: http://localhost:${port}`);
-    logger.log(`Environment: ${process.env.NODE_ENV}`);
-  } catch (error) {
-    console.error('Failed to start application:', error);
-    process.exit(1);
-  }
+  const app = await NestFactory.create(AppModule);
+  
+  const configService = app.get(ConfigService);
+  
+  // Global prefix
+  app.setGlobalPrefix('api');
+  
+  // CORS
+  app.enableCors(createCorsConfig(configService));
+  
+  // Global pipes
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
+  
+  // Global filters
+  app.useGlobalFilters(new GlobalExceptionFilter());
+  
+  const port = configService.get<number>('PORT', 4000);
+  await app.listen(port);
+  
+  console.log(`Application is running on: http://localhost:${port}`);
 }
-
 bootstrap();

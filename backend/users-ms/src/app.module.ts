@@ -2,53 +2,44 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UsersModule } from '@/modules/users/users.module';
-
+import { MongooseModule } from '@nestjs/mongoose';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EventsModule } from '@/modules/events/events.module';
-// @Module({
-//   imports: [UsersModule],
-//   controllers: [AppController],
-//   providers: [AppService],
-// })
 
+import { UsersController } from '@/modules/users/users.controller';
+import { validationSchema } from '@/config/env.validation';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot({
-      type: (process.env.DB_TYPE as any) || 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      username: process.env.DB_USERNAME || 'admin',
-      password: process.env.DB_PASSWORD || 'admin',
-      database: process.env.DB_DATABASE || 'users_ms_db',
-      autoLoadEntities: true,
-      synchronize: true,
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema,
     }),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => {
+        const dbType = configService.get<string>('DB_TYPE');
+        const dbUser = configService.get<string>('DB_USER');
+        const dbPassword = configService.get<string>('DB_PASSWORD');
+        const dbHost = configService.get<string>('DB_HOST');
+        const dbPort = configService.get<string>('DB_PORT');
+        const dbName = configService.get<string>('DB_NAME');
 
-    ClientsModule.register([
-      {
-        name: 'PRODUCTS_MS',
-        transport: Transport.RMQ,
-        options: {
-          urls: [process.env.RABBITMQ_URL || 'amqp://localhost:5672'],
-          queue: process.env.PRODUCTS_QUEUE || 'products_queue',
-          queueOptions: { durable: false },
-        },
+        const uri = `${dbType}://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}?authSource=admin&retryWrites=true&w=majority&directConnection=true`;
+
+        return {
+          uri,
+          autoCreate: true,
+        };
       },
-      {
-        name: 'SHARED_DATA_MS',
-        transport: Transport.RMQ,
-        options: {
-          urls: [process.env.RABBITMQ_URL || 'amqp://localhost:5672'],
-          queue: process.env.SHARED_DATA_QUEUE || 'shared_data_queue',
-          queueOptions: { durable: false },
-        },
-      },
-    ]),
+      inject: [ConfigService],
+    }),
     UsersModule,
-    EventsModule,
   ],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
 

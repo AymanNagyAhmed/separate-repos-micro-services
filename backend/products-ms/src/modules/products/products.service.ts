@@ -5,9 +5,13 @@ import { Product } from '@/modules/products/entities/product.entity';
 import { CreateProductDto } from '@/modules/products/dto/create-product.dto';
 import { UpdateProductDto } from '@/modules/products/dto/update-product.dto';
 import { ApiResponse } from '@/common/interfaces/api-response.interface';
+import { ApiResponseUtil } from '@/common/utils/api-response.util';
+import { ApplicationException } from '@/common/exceptions/application.exception';
 
 @Injectable()
 export class ProductsService {
+    private readonly BASE_PATH = '/products';
+
     constructor(
         @InjectRepository(Product)
         private readonly productsRepository: Repository<Product>,
@@ -18,100 +22,121 @@ export class ProductsService {
             const product = this.productsRepository.create(createProductDto);
             const savedProduct = await this.productsRepository.save(product);
             
-            return {
-                success: true,
-                statusCode: HttpStatus.CREATED,
-                message: 'Product created successfully',
-                path: '/products',
-                timestamp: new Date().toISOString(),
-                data: savedProduct
-            };
+            return ApiResponseUtil.success(
+                savedProduct,
+                'Product created successfully',
+                this.BASE_PATH,
+                HttpStatus.CREATED
+            );
         } catch (error) {
-            throw new BadRequestException('Failed to create product');
+            throw new ApplicationException(
+                'Failed to create product',
+                HttpStatus.BAD_REQUEST,
+                this.BASE_PATH
+            );
         }
     }
 
     async findAll(): Promise<ApiResponse<Product[]>> {
         const products = await this.productsRepository.find();
         
-        return {
-            success: true,
-            statusCode: HttpStatus.OK,
-            message: 'Products retrieved successfully',
-            path: '/products',
-            timestamp: new Date().toISOString(),
-            data: products
-        };
+        return ApiResponseUtil.success(
+            products,
+            'Products retrieved successfully',
+            this.BASE_PATH
+        );
     }
 
     async findOne(id: number): Promise<ApiResponse<Product>> {
         const product = await this.findProductById(id);
-        if (!product) {
-            throw new NotFoundException(`Product with ID ${id} not found`);
-        }
-
-        return {
-            success: true,
-            statusCode: HttpStatus.OK,
-            message: 'Product retrieved successfully',
-            path: `/products/${id}`,
-            timestamp: new Date().toISOString(),
-            data: product
-        };
+        
+        return ApiResponseUtil.success(
+            product,
+            'Product retrieved successfully',
+            `${this.BASE_PATH}/${id}`
+        );
     }
 
     async update(id: number, updateProductDto: UpdateProductDto): Promise<ApiResponse<Product>> {
-        const product = await this.findProductById(id);
-        if (!product) {
-            throw new NotFoundException(`Product with ID ${id} not found`);
-        }
+        await this.findProductById(id);
 
         try {
-            Object.assign(product, updateProductDto);
+            const product = await this.productsRepository.preload({
+                id,
+                ...updateProductDto,
+            });
+
+            if (!product) {
+                throw new ApplicationException(
+                    `Product with ID ${id} not found`,
+                    HttpStatus.NOT_FOUND,
+                    `${this.BASE_PATH}/${id}`
+                );
+            }
+
             const updatedProduct = await this.productsRepository.save(product);
             
-            return {
-                success: true,
-                statusCode: HttpStatus.OK,
-                message: 'Product updated successfully',
-                path: `/products/${id}`,
-                timestamp: new Date().toISOString(),
-                data: updatedProduct
-            };
+            return ApiResponseUtil.success(
+                updatedProduct,
+                'Product updated successfully',
+                `${this.BASE_PATH}/${id}`
+            );
         } catch (error) {
-            throw new BadRequestException('Failed to update product');
+            if (error instanceof ApplicationException) {
+                throw error;
+            }
+            throw new ApplicationException(
+                'Failed to update product',
+                HttpStatus.BAD_REQUEST,
+                `${this.BASE_PATH}/${id}`
+            );
         }
     }
 
     async remove(id: number): Promise<ApiResponse<void>> {
         const product = await this.findProductById(id);
-        if (!product) {
-            throw new NotFoundException(`Product with ID ${id} not found`);
-        }
 
         try {
             await this.productsRepository.remove(product);
             
-            return {
-                success: true,
-                statusCode: HttpStatus.OK,
-                message: 'Product deleted successfully',
-                path: `/products/${id}`,
-                timestamp: new Date().toISOString(),
-                data: undefined
-            };
+            return ApiResponseUtil.success(
+                undefined,
+                'Product deleted successfully',
+                `${this.BASE_PATH}/${id}`
+            );
         } catch (error) {
-            throw new BadRequestException('Failed to delete product');
+            throw new ApplicationException(
+                'Failed to delete product',
+                HttpStatus.BAD_REQUEST,
+                `${this.BASE_PATH}/${id}`
+            );
         }
     }
 
     private async findProductById(id: number): Promise<Product> {
         try {
-            return await this.productsRepository.findOne({ 
+            const product = await this.productsRepository.findOne({ 
                 where: { id } 
             });
+            
+            if (!product) {
+                throw new ApplicationException(
+                    `Product with ID ${id} not found`,
+                    HttpStatus.NOT_FOUND,
+                    `${this.BASE_PATH}/${id}`
+                );
+            }
+            
+            return product;
         } catch (error) {
-            throw new BadRequestException(`Invalid product ID: ${id}`);
+            if (error instanceof ApplicationException) {
+                throw error;
+            }
+            throw new ApplicationException(
+                `Invalid product ID: ${id}`,
+                HttpStatus.BAD_REQUEST,
+                `${this.BASE_PATH}/${id}`
+            );
         }
     }
 }

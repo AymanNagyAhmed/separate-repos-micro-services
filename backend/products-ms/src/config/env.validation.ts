@@ -23,7 +23,6 @@ export const validationSchema = Joi.object({
   // RabbitMQ
   RABBITMQ_USER: Joi.string().required(),
   RABBITMQ_PASS: Joi.string().required(),
-  RABBITMQ_URL: Joi.string().required(),
   RABBITMQ_QUEUE: Joi.string().required(),
   RABBITMQ_EXCHANGE: Joi.string().required(),
   RABBITMQ_ROUTING_KEY: Joi.string().required(),

@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 export const createCorsConfig = (configService: ConfigService): CorsOptions => ({
   origin: (origin, callback) => {
-    const allowedOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:3000,http://localhost:3001').split(',');
+    const allowedOrigins = configService.get<string>('FRONTEND_URLS', 'http://localhost:3000,htts://localhost:3000').split(',');
     if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {

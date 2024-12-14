@@ -6,52 +6,56 @@ import {
     Patch,
     Param,
     Delete,
-    UseGuards,
     ParseIntPipe,
-    ForbiddenException,
-    Req,
-    UseInterceptors
+    Inject,
 } from '@nestjs/common';
+import { ClientProxy, EventPattern } from '@nestjs/microservices';
+import { firstValueFrom } from 'rxjs';
 
 @Controller('users')
 export class UsersController {
-    constructor() { }
+    constructor(@Inject('USERS_MS') private readonly usersClient: ClientProxy) {}
+
+    @EventPattern('get_all_users')
+    async getAllUsers(data: any) {
+        console.log('getAllUsers', data);
+    }
 
     @Post()
     async create(@Body() createUserDto: { name: string }) {
-        return { id: 1, name: 'John Doe' };
+        return firstValueFrom(
+            this.usersClient.send({ cmd: 'create_user' }, createUserDto)
+        );
     }
 
     @Get()
     async findAll() {
-        return [{ id: 1, name: 'John Doe' }, { id: 2, name: 'Jane Doe' }];
+        return firstValueFrom(
+            this.usersClient.send({ cmd: 'get_users' }, {})
+        );
     }
 
     @Get(':id')
-    async findOne(
-        @Param('id', ParseIntPipe) id: number,
-    ) {
-        return { id: 1, name: 'John Doe' };
+    async findOne(@Param('id', ParseIntPipe) id: number) {
+        return firstValueFrom(
+            this.usersClient.send({ cmd: 'get_user' }, { id })
+        );
     }
 
     @Patch(':id')
     async update(
         @Param('id', ParseIntPipe) id: number,
-        @Body() updateUserDto: { name: string },
+        @Body() updateUserDto: { name: string }
     ) {
-        return { id: 1, name: 'John Doe' };
+        return firstValueFrom(
+            this.usersClient.send({ cmd: 'update_user' }, { id, ...updateUserDto })
+        );
     }
 
     @Delete(':id')
-    async remove(
-        @Param('id', ParseIntPipe) id: number,
-    ) {
-        return { id: 1, name: 'John Doe' };
-    }
-
-    private checkUserAccess(user: any, targetUserId: number): void {
-        if (user.id !== targetUserId) {
-            throw new ForbiddenException('You can only modify your own profile');
-        }
+    async remove(@Param('id', ParseIntPipe) id: number) {
+        return firstValueFrom(
+            this.usersClient.send({ cmd: 'delete_user' }, { id })
+        );
     }
 }

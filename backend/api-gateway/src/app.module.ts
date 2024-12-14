@@ -1,12 +1,10 @@
 import { Module } from '@nestjs/common';
-
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { UsersController } from '@/modules/users/users.controller';
-import { ProductsController } from '@/modules/products/products.controller';
 import { validationSchema } from '@/config/env.validation';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
+import { ProductsModule } from './modules/products/products.module';
+// import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -14,29 +12,10 @@ import { AppService } from '@/app.service';
       isGlobal: true,
       validationSchema,
     }),
-    ClientsModule.register([
-      {
-        name: 'USERS_MS',
-        transport: Transport.RMQ,
-        options: {
-          urls: ['amqp://localhost:5672'],
-          queue: 'users_queue',
-          queueOptions: { durable: false },
-        },
-      },
-      {
-        name: 'PRODUCTS_MS',
-        transport: Transport.RMQ,
-        options: {
-          urls: ['amqp://localhost:5672'],
-          queue: 'products_queue',
-          queueOptions: { durable: false },
-        },
-      },
-    ]),
+    ProductsModule,
+    // UsersModule,
   ],
-  controllers: [AppController, UsersController, ProductsController],
+  controllers: [AppController],
   providers: [AppService],
-
 })
 export class AppModule {}

@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
-import { ProductsController } from '@/modules/products/products.controller';
 import { validationSchema } from '@/config/env.validation';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from '@/app.controller';
